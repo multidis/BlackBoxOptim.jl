@@ -1,33 +1,28 @@
 # Implements variants of the memetic search algorithms RS and RIS. However,
-# we have modified them since they did not give very good performance when 
+# we have modified them since they did not give very good performance when
 # implemented as described in the papers below. Possibly, the papers are not
 # unambigous and I have misinterpreted something from them...
 #
 # The "Resampling Search" (RS) memetic algorithm is described in:
 #
-#  F. Caraffini, F. Neri, M. Gongora and B. N. Passow, "Re-sampling Search: A 
+#  F. Caraffini, F. Neri, M. Gongora and B. N. Passow, "Re-sampling Search: A
 #  Seriously Simple Memetic Approach with a High Performance", 2013.
 #
 # and its close sibling "Resampling Inheritance Search" (RIS) is described in:
 #
-#  F. Caraffini, F. Neri, B. N. Passow and G. Iacca, "Re-sampled Inheritance 
+#  F. Caraffini, F. Neri, B. N. Passow and G. Iacca, "Re-sampled Inheritance
 #  Search: High Performance Despite the Simplicity", 2013.
-#  
+#
 
-RSDefaultParameters = {
+RSDefaultParameters = @compat Dict{Symbol,Any}(
   :PrecisionRatio    => 0.40, # 40% of the diameter is used as the initial step length
   :PrecisionTreshold => 1e-6  # They use 1e-6 in the paper.
-}
+)
 
-# SteppingOptimizer's do not have an ask and tell interface since they would be
-# complex to implement if forced into that form.
-abstract SteppingOptimizer <: Optimizer
-has_ask_tell_interface(rms::SteppingOptimizer) = false
-
-type ResamplingMemeticSearcher <: SteppingOptimizer
+type ResamplingMemeticSearcher{E<:Evaluator} <: SteppingOptimizer
   name::ASCIIString
   params::Parameters
-  evaluator::Evaluator
+  evaluator::E
   resampling_func::Function
 
   precisions      # Cache the starting precision values so we need not calc them for each step
@@ -37,7 +32,7 @@ type ResamplingMemeticSearcher <: SteppingOptimizer
   elite_fitness   # Fitness of current elite
 
   # Constructor for RS:
-  ResamplingMemeticSearcher(evaluator; parameters = {},
+  ResamplingMemeticSearcher(evaluator::E, parameters = @compat(Dict{Symbol,Any}());
     resampling_function = random_resample,
     name = "Resampling Memetic Search (RS)"
     ) = begin
@@ -50,31 +45,35 @@ type ResamplingMemeticSearcher <: SteppingOptimizer
 
     new(name, params, evaluator, resampling_function,
       params[:PrecisionRatio] * diams, diams,
-      elite, evaluate(evaluator, elite))
+      elite, fitness(elite, evaluator))
 
   end
 end
 
 name(rs::ResamplingMemeticSearcher) = rs.name
 
-RISDefaultParameters = {
+RISDefaultParameters = @compat Dict{Symbol,Any}(
   :InheritanceRatio => 0.30   # On average, 30% of positions are inherited when resampling in RIS
-}
+)
+
+function ResamplingMemeticSearcher{E<:Evaluator}(problem::OptimizationProblem, evaluator::E, params)
+  ResamplingMemeticSearcher{E}(evaluator, params)
+end
 
 # Constructor for the RIS:
-function ResamplingInheritanceMemeticSearcher(evaluator; parameters = {})
-  ResamplingMemeticSearcher(evaluator; 
-    parameters = Parameters(parameters, RISDefaultParameters, RSDefaultParameters),
-    resampling_function = random_resample_with_inheritance, 
+function ResamplingInheritanceMemeticSearcher{E<:Evaluator}(problem::OptimizationProblem, evaluator::E, parameters = @compat(Dict{Symbol,Any}()))
+  ResamplingMemeticSearcher{E}(evaluator,
+    Parameters(parameters, RISDefaultParameters, RSDefaultParameters),
+    resampling_function = random_resample_with_inheritance,
     name = "Resampling Inheritance Memetic Search (RIS)")
 end
 
-function resampling_memetic_searcher(params)
-  ResamplingMemeticSearcher(params[:Evaluator]; parameters = params)
+function resampling_memetic_searcher(problem::OptimizationProblem, params)
+  ResamplingMemeticSearcher(problem, params[:Evaluator], params)
 end
 
-function resampling_inheritance_memetic_searcher(params)
-  ResamplingInheritanceMemeticSearcher(params[:Evaluator]; parameters = params)
+function resampling_inheritance_memetic_searcher(problem::OptimizationProblem, params)
+  ResamplingInheritanceMemeticSearcher(problem, params[:Evaluator], params)
 end
 
 # For Resampling Search (RS) the resample is purely random.
@@ -97,12 +96,12 @@ function random_resample_with_inheritance(rms::ResamplingMemeticSearcher)
   return xt
 end
 
-function step(rms::ResamplingMemeticSearcher)
+function step!(rms::ResamplingMemeticSearcher)
 
   # First randomly sample two candidates and select the best one. It seems
-  # RS and RIS might be doing this in two different ways but use the RS way for 
+  # RS and RIS might be doing this in two different ways but use the RS way for
   # now.
-  trial, fitness = best_of(rms.evaluator, rms.resampling_func(rms), rms.resampling_func(rms))
+  trial, fitness = best_of(rms.resampling_func(rms), rms.resampling_func(rms), rms.evaluator)
 
   # Update elite if new trial is better. This is how they write it in the RIS paper
   # but in the RS paper it seems they always update the elite. Unclear! To me it
@@ -121,7 +120,7 @@ function step(rms::ResamplingMemeticSearcher)
 end
 
 function set_as_elite_if_better(rms::ResamplingMemeticSearcher, candidate, fitness)
-  if is_better(rms.evaluator, fitness, rms.elite_fitness)
+  if is_better(fitness, rms.elite_fitness, rms.evaluator)
     rms.elite = candidate
     rms.elite_fitness = fitness
     return true
@@ -164,7 +163,7 @@ function local_search(rms::ResamplingMemeticSearcher, xstart, fitness)
         xs[i] = ssmins[i] + rand() * (xt[i] - ssmins[i])
       end
 
-      if is_better(rms.evaluator, xs, tfitness)
+      if is_better(xs, tfitness, rms.evaluator)
         xt[i] = xs[i]
         tfitness = last_fitness(rms.evaluator)
       else
@@ -175,7 +174,7 @@ function local_search(rms::ResamplingMemeticSearcher, xstart, fitness)
           xs[i] = xt[i] + rand() * (ssmaxs[i] - xt[i])
         end
 
-        if is_better(rms.evaluator, xs, tfitness)
+        if is_better(xs, tfitness, rms.evaluator)
           xt[i] = xs[i]
           tfitness = last_fitness(rms.evaluator)
         end
@@ -183,7 +182,7 @@ function local_search(rms::ResamplingMemeticSearcher, xstart, fitness)
 
     end
 
-    if is_better(rms.evaluator, tfitness, fitness)
+    if is_better(tfitness, fitness, rms.evaluator)
       fitness = tfitness
       xstart = xt
     else

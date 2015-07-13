@@ -4,80 +4,102 @@
 # potential there is.
 abstract Archive
 
+immutable ArchivedFitness{F}
+    timestamp::Float64    # when archived
+    num_fevals::Int64     # number of fitness evaluations so far
+    fitness::F            # current fitness
+    fitness_improvement_ratio::Float64
+
+    ArchivedFitness(a::Archive, fitness::F, num_fevals = -1) =
+      new(time(), num_fevals == -1 ? a.num_fitnesses : num_fevals,
+          fitness, fitness_improvement_ratio(a, fitness))
+end
+
+ArchivedFitness{F}(a::Archive, fitness::F, num_fevals = -1) = ArchivedFitness{F}(a, fitness, num_fevals)
+
+fitness(a::ArchivedFitness) = a.fitness
+
+immutable ArchivedIndividual{F}
+    params::Individual
+    fitness::F
+end
+
+ArchivedIndividual{F}(params::Individual, fitness::F) = ArchivedIndividual{F}(params, fitness)
+Base.(:(==)){F}(x::ArchivedIndividual{F}, y::ArchivedIndividual{F}) =
+  (x.fitness == y.fitness) && (x.params == y.params)
+
+fitness(a::ArchivedIndividual) = a.fitness
+
 # A top list archive saves a top list of the best performing (best fitness)
 # candidates/individuals seen.
-type TopListArchive <: Archive
+type TopListArchive{F,FS<:FitnessScheme} <: Archive
+  fit_scheme::FS        # Fitness scheme used
   start_time::Float64   # Time when archive created, we use this to approximate the starting time for the opt...
-  num_fitnesses::Int  # Number of calls to add_candidate
+  numdims::Int          # Number of dimensions in opt problem. Needed for confidence interval estimation.
 
-  size::Int           # Max size of top lists
-  count::Int          # Current number of values in the top lists
+  num_fitnesses::Int    # Number of calls to add_candidate
 
-  fitnesses::Array{Float64,1}  # Top fitness values
-  candidates::Array{Any, 1}    # Top candidates corresponding to top fitness values
+  capacity::Int         # Max size of top lists
+  candidates::Vector{ArchivedIndividual{F}}  # Top candidates and their fitness values
 
   # We save a fitness history that we can later print to a csv file.
   # For each magnitude class (as defined by magnitude_class function below) we
   # we save the first entry of that class. The tuple saved for each magnitude
   # class is: (magnitude_class, time, num_fevals, fitness, width_of_confidence_interval)
-  fitness_history::Array{(Float64, Int, Float64, Float64),1}
+  fitness_history::Vector{ArchivedFitness{F}}
 
-  numdims::Int        # Number of dimensions in opt problem. Needed for confidence interval estimation.
-
-  TopListArchive(numdims, size::Int = 10) = begin
-    new(time(), 0, size, 0, Float64[], Any[], 
-      (Float64, Int, Float64, Float64)[], int(numdims))
+  function TopListArchive(fit_scheme::FS, numdims, capacity = 10)
+    new(fit_scheme, time(), numdims, 0, capacity, ArchivedIndividual[], ArchivedFitness[])
   end
 end
 
-best_candidate(a::Archive) = a.candidates[1]
-best_fitness(a::Archive) = a.fitnesses[1]
-last_top_fitness(a::Archive) = a.fitnesses[a.count]
-should_enter_toplist(fitness::Float64, a::Archive) = fitness < last_top_fitness(a)
+TopListArchive{FS<:FitnessScheme}(fit_scheme::FS, numdims, capacity = 10) =
+  TopListArchive{fitness_type(fit_scheme),FS}(fit_scheme, numdims, capacity)
 
-# Delta fitness is the difference between the top two candidates found so far.
-# 
-function delta_fitness(a::Archive)
+fitness_scheme(a::TopListArchive) = a.fit_scheme
+capacity(a::TopListArchive) = a.capacity
+Base.length(a::TopListArchive) = length(a.candidates)
+
+best_candidate(a::TopListArchive) = a.candidates[1].params
+best_fitness(a::TopListArchive) = !isempty(a.candidates) ? fitness(a.candidates[1]) : nafitness(fitness_scheme(a))
+last_top_fitness(a::TopListArchive) = !isempty(a.candidates) ? fitness(a.candidates[end]) : nafitness(fitness_scheme(a))
+
+# Delta fitness is the difference between the best fitness and the former
+# best fitness
+function delta_fitness(a::TopListArchive)
   if length(a.fitness_history) < 2
     Inf
   else
-    abs(a.fitness_history[2][3] - a.fitness_history[1][3])
+    # FIXME aggregate fitness?
+    abs(a.fitness_history[end].fitness - a.fitness_history[end-1].fitness)
   end
 end
 
 # Add a candidate with a fitness to the archive (if it is good enough).
-function add_candidate!(a::TopListArchive, fitness::Number, 
-  candidate, num_fevals::Int = -1)
+function add_candidate!{F,FS<:FitnessScheme}(a::TopListArchive{F,FS}, fitness::F, candidate, num_fevals = -1)
   a.num_fitnesses += 1
 
-  if a.count < a.size
+  if isempty(a.fitness_history) || is_better(fitness, best_fitness(a), fitness_scheme(a))
+    # Save fitness history so we can reconstruct the most important events later.
+    push!(a.fitness_history, ArchivedFitness(a, fitness, num_fevals))
+  end
 
-    if a.count == 0 || fitness < best_fitness(a)
-      push_to_fitness_history!(a, fitness, num_fevals)
+  if length(a) < capacity(a) ||
+     !isempty(a.candidates) && is_better(fitness, last_top_fitness(a), fitness_scheme(a))
+    new_cand = ArchivedIndividual(copy(candidate), fitness)
+    ix = searchsortedfirst(a.candidates, new_cand,
+                           by=BlackBoxOptim.fitness, lt=fitness_scheme_lt(fitness_scheme(a)))
+    if ix > length(a) || a.candidates[ix] != new_cand
+      insert!(a.candidates, ix, new_cand)
     end
-
-    push_then_sort_by_fitness!(fitness, candidate, a)
-    a.count += 1
-
-  elseif should_enter_toplist(fitness, a)
-
-    if fitness < best_fitness(a)
-      push_to_fitness_history!(a, fitness, num_fevals)
-    end
-
-    push_then_sort_by_fitness!(fitness, candidate, a)
-
-    # Cut so only top list values are saved
-    a.fitnesses = a.fitnesses[1:a.size]
-    a.candidates = a.candidates[1:a.size]
-
+    if length(a) > capacity(a) pop!(a.candidates) end # don't grow over the capacity
   end
 end
 
-# The magnitude class of a value is a tuple indicating its sign and scale in a 
-# tuple. This is used for filtering so that we only need to save one history 
+# The magnitude class of a value is a tuple indicating its sign and scale in a
+# tuple. This is used for filtering so that we only need to save one history
 # value per magnitude class instead of saving them all.
-function magnitude_class(f::Number)
+function magnitude_class(f)
   f = float(f)
   if f == 0.0
     (-1.0, 1e100)
@@ -86,12 +108,7 @@ function magnitude_class(f::Number)
   end
 end
 
-# Save fitness history so we can reconstruct the most important events later.
-function push_to_fitness_history!(a::Archive, fitness::Number, num_fevals::Int = -1)
-  push!(a.fitness_history, make_fitness_event(a, fitness, num_fevals))
-end
-
-function fitness_improvement_ratio(a::Archive, newFitness) 
+function fitness_improvement_ratio(a::Archive, newFitness)
   try
     bestfitness = best_fitness(a)
     return abs( (bestfitness - newFitness) / bestfitness )
@@ -105,17 +122,12 @@ function distance_to_optimum(fitness, bestfitness)
   abs(fitness - bestfitness)
 end
 
-function make_fitness_event(a::Archive, fitness::Number, num_fevals::Int = -1)
-  nf = num_fevals == -1 ? a.num_fitnesses : num_fevals
-  (time(), nf, fitness, fitness_improvement_ratio(a, fitness))
-end
-
 function fitness_history_csv_header(a::Archive)
   "Date,Time,ElapsedTime,Magnitude,NumFuncEvals,FitnessImprovementRatio,Fitness"
 end
 
 function save_fitness_history_to_csv_file(a::Archive, filename = "fitness_history.csv";
-  header_prefix = "", line_prefix = "", 
+  header_prefix = "", line_prefix = "",
   include_header = true, bestfitness = nothing)
 
   fh = open(filename, "a+")
@@ -132,17 +144,16 @@ function save_fitness_history_to_csv_file(a::Archive, filename = "fitness_histor
 
   end
 
-  for(event in a.fitness_history)
+  for(af in a.fitness_history)
 
-    t, nf, f, fir = event
+    mc = magnitude_class(af.fitness)
 
-    mc = magnitude_class(f)
-
-    line = [line_prefix, strftime("%Y-%m-%d,%T", t), t-a.start_time,
-      mc[1]*mc[2], nf, fir, f]
+    line = [line_prefix, strftime("%Y-%m-%d,%T", af.timestamp),
+        af.timestamp-a.start_time,
+        mc[1]*mc[2], af.num_fevals, af.fitness_improvement_ratio, af.fitness]
 
     if bestfitness != nothing
-      push!(line, distance_to_optimum(f, bestfitness))
+      push!(line, distance_to_optimum(af.fitness, bestfitness))
     end
 
     println(fh, join(line, ","))
@@ -151,14 +162,6 @@ function save_fitness_history_to_csv_file(a::Archive, filename = "fitness_histor
 
   close(fh)
 
-end
-
-function push_then_sort_by_fitness!(fitness::Number, candidate, a::Archive)
-  push!(a.fitnesses, fitness)
-  push!(a.candidates, candidate)
-  order = sortperm(a.fitnesses)
-  a.fitnesses = a.fitnesses[order]
-  a.candidates = a.candidates[order]
 end
 
 # Merge multiple fitness histories and calculate the min, max, avg and median
@@ -171,24 +174,24 @@ function merge_fitness_histories(histories)
   current_feval = 1
 
   # Find max history length
-  histlengths = [length(h) for h in histories]
-  maxlen = maximum(histlengths)
+  maxlen = mapreduce( length, max, histories )
 
   while maximum(counts) < maxlen
 
     # Find min feval for current events, this is the next current feval
     for i in 1:numhist
       t, nf, f, fir = histories[i][counts[i]]
+      # FIXME ???
     end
 
   end
-    
+
 end
 
 # Merge the fitness histories and save the average values of the fitness,
 # and distance to best fitness for each change in any of the histories.
 #function merge_fitness_histories_to_csv(archives::Archive[], filename = "fitness_history.csv";
-#  header_prefix = "", line_prefix = "", 
+#  header_prefix = "", line_prefix = "",
 #  include_header = true, bestfitness = nothing)
 #
 #end
@@ -209,19 +212,19 @@ end
 #   l1 = best_fitness(a)
 #
 function width_of_confidence_interval(a::Archive, p = 0.01)
-  if length(a.fitness_history) < 2
+  if length(a) < 2
     return Inf
   else
-    l1 = a.fitnesses[1]
-    l2 = a.fitnesses[2]
+    l1 = fitness(a.candidates[1])
+    l2 = fitness(a.candidates[2])
     # We use abs below so it works also for maximization.
     abs(l2 - l1) / ( (1-p)^(-2/a.numdims) - 1)
   end
 end
 
-# We define the improvement potential as the percentage improvement 
+# We define the improvement potential as the percentage improvement
 # that can be expected from the current fitness value at a given p value.
-# In theory, an optimization run should be terminated when this value is very 
+# In theory, an optimization run should be terminated when this value is very
 # small, i.e. there is little improvement potential left in the run.
 function fitness_improvement_potential(a::Archive, p = 0.01)
   width_of_confidence_interval(a, p) / abs(best_fitness(a))

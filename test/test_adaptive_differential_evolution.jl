@@ -2,31 +2,42 @@ NumTestRepetitions = 100
 
 facts("Adaptive differential evolution optimizer") do
 
-ade = adaptive_de_rand_1_bin()
+ss = symmetric_search_space(1, (0.0, 10.0))
+fake_problem = convert(FunctionBasedProblem, x -> 0.0, "test_problem", MinimizingFitnessScheme, ss) # FIXME v0.3 workaround
 
-context("sample_f") do
+ade = adaptive_de_rand_1_bin(fake_problem, @compat Dict{Symbol,Any}(
+  :Population => rand(1, 100)))
+
+context("parameters adjust!()") do
   for(i in 1:NumTestRepetitions)
-    @fact 0.0 <= BlackBoxOptim.sample_f(ade) <= 1.0 => true
+    cur_cr, cur_f = BlackBoxOptim.crossover_parameters(ade.params, 1)
+    @fact 0.0 <= cur_cr <= 1.0 => true
+    @fact 0.0 <= cur_f <= 1.0 => true
+    BlackBoxOptim.adjust!(ade.params, 1, false)
+    # FIXME this fails too often; needs adjusting the distribution?
+    #new_cr, new_f = BlackBoxOptim.crossover_parameters(ade.params, 1)
+    #@fact new_cr != cur_cr => true
+    #@fact new_f != cur_f => true
   end
 end
 
-context("ask") do
+# FIXME actually this test is not required as the standard DE already tests for that
+context("ask()") do
   for(i in 1:NumTestRepetitions)
     res = BlackBoxOptim.ask(ade)
-
     @fact length(res) => 2
-    trial, trialIndex = res[1]
-    target, targetIndex = res[2]
 
-    @fact ndims(trial) => 2
-    @fact 1 <= trialIndex <= length(ade.population) => true
-    @fact isinspace(trial, ade.search_space) => true
+    trial, target = res
 
-    @fact ndims(target) => 2
-    @fact 1 <= targetIndex <= length(ade.population) => true
-    @fact isinspace(target, ade.search_space) => true
+    @fact ndims(trial.params) => 1
+    @fact 1 <= trial.index <= popsize(ade) => true
+    @fact isinspace(trial.params, ade.embed.searchSpace) => true
 
-    @fact trialIndex == targetIndex => true
+    @fact ndims(target.params) => 1
+    @fact 1 <= target.index <= popsize(ade) => true
+    @fact isinspace(target.params, ade.embed.searchSpace) => true
+
+    @fact trial.index == target.index => true
   end
 end
 

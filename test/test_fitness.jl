@@ -12,16 +12,16 @@ facts("Fitness") do
     @fact hat_compare(-1.0, -1.0) => 0
   end
 
-  context("is_minimizing in float fitness schemes") do
-    mins = BlackBoxOptim.FloatFitness(true)
+  context("is_minimizing in ScalarFitness schemes") do
+    mins = MinimizingFitnessScheme
     @fact BlackBoxOptim.is_minimizing(mins) => true
 
-    maxs = BlackBoxOptim.FloatFitness(false)
+    maxs = MaximizingFitnessScheme
     @fact BlackBoxOptim.is_minimizing(maxs) => false
   end
 
   context("hat_compare floats in a minimizing fitness scheme") do
-    scheme = BlackBoxOptim.FloatFitness(true)
+    scheme = MinimizingFitnessScheme
 
     @fact hat_compare(1.0, 2.0, scheme) => -1
     @fact hat_compare(2.0, 1.0, scheme) => 1
@@ -29,7 +29,7 @@ facts("Fitness") do
   end
 
   context("hat_compare floats in a maximizing fitness scheme") do
-    scheme = BlackBoxOptim.FloatFitness(false)
+    scheme = MaximizingFitnessScheme
 
     @fact hat_compare(1.0, 2.0, scheme) => 1
     @fact hat_compare(2.0, 1.0, scheme) => -1
@@ -37,7 +37,8 @@ facts("Fitness") do
   end
 
   context("hat_compare fitnesses of size 1 in a minimizing FitnessScheme") do
-    scheme = float_vector_scheme_min()
+    scheme = vector_fitness_scheme_min(1)
+    @fact BlackBoxOptim.is_minimizing(scheme) => true
 
     @fact hat_compare([-1.0], [1.0], scheme) => -1
     @fact hat_compare([0.0], [0.3], scheme) => -1
@@ -53,7 +54,8 @@ facts("Fitness") do
   end
 
   context("hat_compare fitnesses of size 1 in a maximizing FitnessScheme") do
-    scheme = float_vector_scheme_max()
+    scheme = vector_fitness_scheme_max(1)
+    @fact BlackBoxOptim.is_minimizing(scheme) => false
 
     @fact hat_compare([-1.0], [1.0], scheme) => 1
     @fact hat_compare([0.0], [0.3], scheme) => 1
@@ -69,7 +71,8 @@ facts("Fitness") do
   end
 
   context("hat_compare fitnesses of size > 1 in a minimizing FitnessScheme") do
-    scheme = float_vector_scheme_min()
+    scheme = vector_fitness_scheme_min(2)
+    @fact BlackBoxOptim.is_minimizing(scheme) => true
 
     @fact hat_compare([-1.0, 0.0], [1.0, 0.0], scheme) => -1
     @fact hat_compare([0.0, -1.0], [0.3, 1.0], scheme) => -1
@@ -85,7 +88,8 @@ facts("Fitness") do
   end
 
   context("hat_compare fitnesses of size > 1 in a minimizing FitnessScheme") do
-    scheme = float_vector_scheme_max()
+    scheme = vector_fitness_scheme_max(2)
+    @fact BlackBoxOptim.is_minimizing(scheme) => false
 
     @fact hat_compare([-1.0, 0.0], [1.0, 0.0], scheme) => 1
     @fact hat_compare([0.0, -1.0], [0.3, 1.0], scheme) => 1
@@ -101,7 +105,7 @@ facts("Fitness") do
   end
 
   context("is_better/is_worse/same_fitness in a minimizing FitnessScheme") do
-    scheme = float_vector_scheme_min()
+    scheme = vector_fitness_scheme_min(2)
 
     @fact is_better([-1.0, 0.0], [1.0, 0.0], scheme) => true
     @fact is_better([0.0, 0.0], [1.0, 0.0], scheme) => true
@@ -125,7 +129,7 @@ facts("Fitness") do
   end
 
   context("is_better/is_worse/same_fitness in a maximizing FitnessScheme") do
-    scheme = float_vector_scheme_max()
+    scheme = vector_fitness_scheme_max(2)
 
     @fact is_better([-1.0, 0.0], [1.0, 0.0], scheme) => false
     @fact is_better([0.0, 0.0], [1.0, 0.0], scheme) => false
@@ -148,4 +152,15 @@ facts("Fitness") do
     @fact same_fitness([0.0], [0.0], scheme) => true
   end
 
+  if VERSION >= v"0.4.0-dev+1258" # FIXME remove version check once v0.4 is released
+    context("fitness_scheme(x, y)") do
+      mins = MinimizingFitnessScheme
+      @fact mins(5.0, 3.0) => false
+      @fact mins(1.0, 2.0) => true
+
+      maxs = MaximizingFitnessScheme
+      @fact maxs(3.0, 5.0) => false
+      @fact maxs(2.0, 1.0) => true
+    end
+  end
 end
