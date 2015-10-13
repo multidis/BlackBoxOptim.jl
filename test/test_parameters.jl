@@ -13,7 +13,7 @@ facts("Parameters") do
 
   context("With one parameter in one set") do
 
-    ps = Parameters({:a => 1})
+    ps = Parameters(Dict{Any,Any}(:a => 1))
 
     @fact ps[:a] => 1
     @fact ps["a"] => 1
@@ -27,7 +27,7 @@ facts("Parameters") do
 
   context("With parameters in multiple sets") do
 
-    ps = Parameters({:a => 1, "c" => 4}, {:a => 2, :b => 3}, {:c => 5})
+    ps = Parameters(Dict{Any,Any}(:a => 1, "c" => 4), Dict{Any,Any}(:a => 2, :b => 3), Dict{Any,Any}(:c => 5))
 
     @fact ps[:a] => 1
     @fact ps["a"] => 1
@@ -47,7 +47,7 @@ facts("Parameters") do
 
   context("Updating parameters after construction") do
 
-    ps = Parameters({:a => 1, "c" => 4}, {:a => 2, :b => 3}, {:c => 5})
+    ps = Parameters(Dict{Any,Any}(:a => 1, "c" => 4), Dict{Any,Any}(:a => 2, :b => 3), Dict{Any,Any}(:c => 5))
 
     ps[:c] = 6
     ps["b"] = 7
@@ -65,8 +65,8 @@ facts("Parameters") do
 
   context("Constructing from another parameters object") do
 
-    ps1 = Parameters({:a => 1, "c" => 4}, {:a => 2, :b => 3})
-    ps2 = Parameters({:a => 5}, ps1, {:c => 6})
+    ps1 = Parameters(Dict{Any,Any}(:a => 1, "c" => 4), Dict{Any,Any}(:a => 2, :b => 3))
+    ps2 = Parameters(Dict{Any,Any}(:a => 5), ps1, Dict{Any,Any}(:c => 6))
 
     @fact ps2[:a] => 5
     @fact ps2[:c] => 4
@@ -75,7 +75,7 @@ facts("Parameters") do
 
   context("Get key without default") do
 
-    ps = Parameters({:a => 1, "c" => 4}, {:a => 2, :b => 3})
+    ps = Parameters(Dict{Any,Any}(:a => 1, "c" => 4), Dict{Any,Any}(:a => 2, :b => 3))
     @fact get(ps, :a) => 1
     @fact get(ps, :b) => 3
     @fact get(ps, :d) => nothing
@@ -84,15 +84,15 @@ facts("Parameters") do
 
   context("Get key without default") do
 
-    ps = Parameters({:a => 1, "c" => 4}, {:a => 2, :b => 3})
+    ps = Parameters(Dict{Any,Any}(:a => 1, "c" => 4), Dict{Any,Any}(:a => 2, :b => 3))
     @fact get(ps, :d, 10) => 10
 
   end
 
   context("Merge with Parameters or Dict") do
 
-    ps = Parameters({:a => 1, "c" => 4}, {:a => 2, :b => 3})
-    ps2 = mergeparam(ps, {:d => 5, :a => 20})
+    ps = Parameters(Dict{Any,Any}(:a => 1, "c" => 4), Dict{Any,Any}(:a => 2, :b => 3))
+    ps2 = mergeparam(ps, Dict{Any,Any}(:d => 5, :a => 20))
     @fact ps2[:d] => 5
     @fact ps2[:b] => 3
     @fact ps2[:a] => 20

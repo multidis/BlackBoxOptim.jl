@@ -1,5 +1,5 @@
 # FIXME replace Any with Type{Optimizer} when the support for Julia v0.3 would be dropped
-ValidMethods = @compat Dict{Symbol,Union(Any,Function)}(
+ValidMethods = @compat Dict{Symbol,Union{Any,Function}}(
   :random_search => random_search,
   :de_rand_1_bin => de_rand_1_bin,
   :de_rand_2_bin => de_rand_2_bin,
@@ -91,7 +91,7 @@ function setup_problem(func::Function, parameters = @compat Dict{Symbol,Any}())
   return problem, params
 end
 
-function compare_optimizers(functionOrProblem::Union(Function, OptimizationProblem);
+function compare_optimizers(functionOrProblem::Union{Function, OptimizationProblem};
   max_time = false, search_space = false, search_range = (0.0, 1.0), dimensions = 2,
   methods = MethodNames, parameters = @compat Dict{Symbol,Any}())
 
@@ -247,10 +247,12 @@ function setup_bboptimize(functionOrProblem; max_time = false,
   return (optimizer, problem, params)
 end
 
-function tr(msg, parameters, obj = None)
+##function tr(msg, parameters, obj = None)
+function tr(msg, parameters, obj = nothing)
   if parameters[:ShowTrace]
     print(msg)
-    if obj != None
+    ##if obj != None
+    if obj != nothing
       showcompact(obj)
     end
   end

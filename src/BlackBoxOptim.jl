@@ -2,6 +2,8 @@ module BlackBoxOptim
 
 using Distributions, StatsBase, Compat
 
+import Base.getindex, Base.setindex!
+
 export  Optimizer, AskTellOptimizer, SteppingOptimizer, PopulationOptimizer,
         bboptimize, compare_optimizers,
 

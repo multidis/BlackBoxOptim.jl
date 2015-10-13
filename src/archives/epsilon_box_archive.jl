@@ -9,7 +9,7 @@ behavior(c::Candidate) = c.behavior
 # and a vector of numbers to represent the behavior of the phenotype.
 type VectorCandidate{ET <: Real, BT <: Real} <: Candidate
   genotype::Vector{ET}
-  behavior::Union(Nothing, Vector{BT})
+  behavior::Union{Nothing, Vector{BT}}
   VectorCandidate{ET <: Real, BT <: Real}
 end
 

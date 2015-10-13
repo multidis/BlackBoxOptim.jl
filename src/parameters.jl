@@ -49,7 +49,7 @@ end
 
 # In a merge the last parameter should be prioritized since this is the way
 # the normal Julia merge of dicts works.
-mergeparam(p1::Union(Dict, Parameters), p2::Union(Dict, Parameters)) = Parameters(p2, p1)
+mergeparam(p1::Union{Dict, Parameters}, p2::Union{Dict, Parameters}) = Parameters(p2, p1)
 
 function delete!(p::Parameters, key)
   for d in p.dicts
