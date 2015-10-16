@@ -9,6 +9,9 @@ numdims(pop::PopulationMatrix) = size(pop, 1)
 params_mean(pop::PopulationMatrix) = mean(pop, 1)
 params_std(pop::PopulationMatrix) = std(pop, 1)
 
+popsize{F}(pop::Vector{Candidate{F}}) = length(pop)
+numdims{F}(pop::Vector{Candidate{F}}) = isempty(pop) ? 0 : length(pop[1].params)
+
 type FitPopulation{F} <: PopulationWithFitness{F}
   # The population is a matrix of floats, each column being an individual.
   individuals::PopulationMatrix
@@ -42,14 +45,34 @@ params_std(pop::FitPopulation) = std(pop.individuals, 1)
 
 fitness(pop::FitPopulation, ix::Int) = pop.fitness[ix]
 
-getindex(pop::FitPopulation, rows, cols) = pop.individuals[rows, cols]
-getindex(pop::FitPopulation, ::Colon, cols) = pop.individuals[:, cols] # FIXME remove v0.3 workaround
-getindex(pop::FitPopulation, indi_ixs) = pop.individuals[:, indi_ixs]
+Base.getindex(pop::FitPopulation, rows, cols) = pop.individuals[rows, cols]
+Base.getindex(pop::FitPopulation, ::Colon, cols) = pop.individuals[:, cols] # FIXME remove v0.3 workaround
+Base.getindex(pop::FitPopulation, indi_ixs) = pop.individuals[:, indi_ixs]
 
+function Base.append!{F}(pop::FitPopulation{F}, extra_pop::FitPopulation{F})
+  numdims(pop) == numdims(extra_pop) ||
+    throw(DimensionMismatch("Cannot append population, "*
+                            "the number of parameters differs "*
+                            "($(numdims(pop)) vs $(numdims(extra_pop)))"))
+  pop.individuals = hcat(pop.individuals, extra_pop.individuals)
+  append!(pop.fitness, extra_pop.fitness)
+  return pop
+end
+
+fitness_type{F}(pop::FitPopulation{F}) = F
 candidate_type{F}(pop::FitPopulation{F}) = Candidate{F}
 
 # get unitialized individual from a pool, or create one, if it's empty
-acquire_candi{F}(pop::FitPopulation{F}) = isempty(pop.candi_pool) ? Candidate{F}(@compat(Vector{Float64}(numdims(pop))), -1, pop.nafitness) : pop!(pop.candi_pool)
+function acquire_candi{F}(pop::FitPopulation{F})
+  if isempty(pop.candi_pool)
+    return Candidate{F}(@compat(Vector{Float64}(numdims(pop))), -1, pop.nafitness)
+  end
+  res = pop!(pop.candi_pool)
+  # reset reference to genetic operation
+  res.op = NO_GEN_OP
+  res.tag = 0
+  return res
+end
 
 # get an individual from a pool and set it to ix-th individual from population
 function acquire_candi(pop::FitPopulation, ix::Int)
@@ -81,7 +104,7 @@ end
 candi_pool_size(pop::FitPopulation) = length(pop.candi_pool)
 
 # default population generation
-function population(problem::OptimizationProblem, options = @compat Dict{Symbol,Any}())
+function population(problem::OptimizationProblem, options::Parameters = EMPTY_PARAMS)
   if !haskey(options, :Population)
       pop = rand_individuals_lhs(search_space(problem), get(options, :PopulationSize, 50))
   else

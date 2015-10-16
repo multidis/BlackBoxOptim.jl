@@ -8,6 +8,8 @@ end
 RandomBound{S<:SearchSpace}(searchSpace::S) = RandomBound{S}(searchSpace)
 RandomBound(dimBounds::Vector{ParamBounds}) = RandomBound(RangePerDimSearchSpace(dimBounds))
 
+search_space(rb::RandomBound) = rb.searchSpace
+
 function apply!(eo::RandomBound, target::Individual, pop, parentIndices)
   @assert length(parentIndices) == 1
   ssmins = mins(eo.searchSpace)
@@ -15,13 +17,14 @@ function apply!(eo::RandomBound, target::Individual, pop, parentIndices)
 
   parentIx = parentIndices[1]
   for i in 1:length(target)
-    min, max = ssmins[i], ssmaxs[i]
+    l, u = ssmins[i], ssmaxs[i]
 
-    if target[i] < min
-      target[i] = min + rand() * (pop[i, parentIx] - min)
-    elseif target[i] > ssmaxs[i]
-      target[i] = max + rand() * (pop[i, parentIx] - max)
+    if target[i] < l
+      target[i] = l + rand() * (pop[i, parentIx] - l)
+    elseif target[i] > u
+      target[i] = u + rand() * (pop[i, parentIx] - u)
     end
+    @assert l <= target[i] <= u "target[$i]=$(target[i]) is out of [$l, $u]"
   end
   return target
 end

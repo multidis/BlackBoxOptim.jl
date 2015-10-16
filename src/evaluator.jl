@@ -3,6 +3,7 @@
 abstract Evaluator{P <: OptimizationProblem}
 
 fitness_scheme(e::Evaluator) = fitness_scheme(problem(e))
+fitness_type(e::Evaluator) = fitness_type(fitness_scheme(e)) 
 worst_fitness(e::Evaluator) = worst_fitness(fitness_scheme(e))
 numdims(e::Evaluator) = numdims(problem(e))
 search_space(e::Evaluator) = search_space(problem(e))
@@ -63,16 +64,26 @@ type Candidate{F}
     index::Int           # index of individual in the population, -1 if unassigned
     fitness::F           # fitness
 
+    op::GeneticOperator  # genetic operator that was applied to the candidate
+    tag::Int             # additional information set by the genetic operator
+
     Candidate(params::Individual, index::Int = -1,
-              fitness::F = NaN) = new(params, index, fitness)
+              fitness::F = NaN,
+              op::GeneticOperator = NO_GEN_OP,
+              tag::Int = 0) =
+        new(params, index, fitness, op, tag)
 end
 
-Base.copy{F}(c::Candidate{F}) = Candidate{F}(copy(c.params), c.index, c.fitness)
+fitness(cand::Candidate) = cand.fitness
+
+Base.copy{F}(c::Candidate{F}) = Candidate{F}(copy(c.params), c.index, c.fitness, c.op, c.tag)
 
 function Base.copy!{F}(c::Candidate{F}, o::Candidate{F})
   copy!(c.params, o.params)
   c.index = o.index
   c.fitness = o.fitness # FIXME if vector?
+  c.op = o.op
+  c.tag = o.tag
   return c
 end
 
@@ -85,7 +96,7 @@ function rank_by_fitness!{F,P<:OptimizationProblem}(e::Evaluator{P}, candidates:
       end
   end
 
-  sort!(candidates; by = c -> c.fitness, lt = (x, y) -> is_better(x, y, fs))
+  sort!(candidates; by = fitness, lt = (x, y) -> is_better(x, y, fs))
 end
 
 fitness_is_within_ftol(e::Evaluator, atol) = fitness_is_within_ftol(problem(e), best_fitness(e.archive), atol)

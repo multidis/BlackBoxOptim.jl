@@ -3,20 +3,17 @@ function rosenbrock2d(x)
 end
 
 facts("bboptimize smoketest") do
-
   for(m in keys(BlackBoxOptim.ValidMethods))
     context("testing $(m) method to ensure it works") do
-      b, f = bboptimize(rosenbrock2d; method = m,
-        search_space = [(-5.0, 5.0), (-2.0, 2.0)], max_time = 0.3,
-        parameters = @compat Dict{Symbol,Any}(:ShowTrace => false))
-
-      # println("Fitness for $m: $f")
-
-      @fact size(b) => (2,)
-      @fact typeof(f) => Float64
-      @fact f < 100.0 => true # this can't be very tight since we give very little time for optimization...
+      ctrl = bbsetup(rosenbrock2d; Method = m,
+        SearchRange = [(-5.0, 5.0), (-2.0, 2.0)], TraceMode = :silent)
+      # run first iteration before the main run to exclude compilation from timing
+      bboptimize(ctrl, MaxSteps = 1)
+      res = bboptimize(ctrl, MaxTime = 0.3)
+      @fact length(best_candidate(res)) --> 2
+      f = best_fitness(res)
+      @fact typeof(f) --> Float64
+      @fact f --> less_than(100.0) # this can't be very tight since we give very little time for optimization...
     end
-
   end
-
 end

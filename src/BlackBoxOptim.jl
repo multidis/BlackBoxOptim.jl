@@ -1,19 +1,21 @@
+VERSION >= v"0.4.0-dev+6521" && __precompile__(true)
+
 module BlackBoxOptim
 
 using Distributions, StatsBase, Compat
 
 export  Optimizer, AskTellOptimizer, SteppingOptimizer, PopulationOptimizer,
-        bboptimize, compare_optimizers,
+        bboptimize, bbsetup, compare_optimizers,
 
         DiffEvoOpt, de_rand_1_bin, de_rand_1_bin_radiuslimited,
-
-        AdaptConstantsDiffEvoOpt, adaptive_de_rand_1_bin, adaptive_de_rand_1_bin_radiuslimited,
+        adaptive_de_rand_1_bin, adaptive_de_rand_1_bin_radiuslimited,
 
         SeparableNESOpt, separable_nes,
-        XNESOpt, xnes,
+        XNESOpt, xnes, dxnes,
 
         # Parameters
-        Parameters, mergeparam,
+        DictChain, Parameters, ParamsDictChain, ParamsDict,
+        chain, flatten,
 
         # Fitness
         FitnessScheme,
@@ -30,6 +32,7 @@ export  Optimizer, AskTellOptimizer, SteppingOptimizer, PopulationOptimizer,
         # Problems
         Problems,
         OptimizationProblem, FunctionBasedProblem,
+        minimization_problem,
         name, fitness_scheme, search_space, numdims, opt_value,
         fitness_is_within_ftol, objfunc, fitness,
 
@@ -44,11 +47,17 @@ export  Optimizer, AskTellOptimizer, SteppingOptimizer, PopulationOptimizer,
         last_top_fitness, delta_fitness, capacity,
         width_of_confidence_interval, fitness_improvement_potential,
 
+        # OptimizationResults
+        minimum, f_minimum, iteration_converged, parameters, population,
+
+        # OptController
+        numruns, lastrun, problem,
+
         # Search spaces
         ParamBounds, Individual, SearchSpace, FixedDimensionSearchSpace, ContinuousSearchSpace,
         RangePerDimSearchSpace, symmetric_search_space,
         numdims, mins, maxs, deltas, ranges, range_for_dim, diameters,
-        rand_individual, rand_individuals, isinspace, rand_individuals_lhs,
+        rand_individual, rand_individuals, rand_individuals_lhs,
 
         # Population
         FitPopulation,
@@ -56,10 +65,14 @@ export  Optimizer, AskTellOptimizer, SteppingOptimizer, PopulationOptimizer,
 
         # Genetic operators
         GeneticOperator, MutationOperator, CrossoverOperator, EmbeddingOperator,
-        NoMutation, MutationClock, GibbsMutationOperator, SimpleGibbsMutation, MutationMixture,
+        NoMutation, MutationClock, GibbsMutationOperator, SimpleGibbsMutation,
+        FixedGeneticOperatorsMixture, FAGeneticOperatorsMixture,
         RandomBound,
         SimpleSelector, RadiusLimitedSelector,
+        apply!, adjust!, next,
 
+        # Utilities
+        FrequencyAdapter, next, update!, frequencies,
         name
 
 # base abstract class for black-box optimization algorithms
@@ -87,22 +100,30 @@ include("search_space.jl")
 include("parameters.jl")
 include("fitness.jl")
 
-# Genetic Operators
-include("genetic_operators/genetic_operator.jl")
-
 include("frequency_adaptation.jl")
 include("archive.jl")
+
+# Genetic Operators
+include("genetic_operators/genetic_operator.jl")
 
 include(joinpath("problems", "all_problems.jl"))
 include(joinpath("problems", "problem_family.jl"))
 
 include("evaluator.jl")
 
-function setup(o::Optimizer, evaluator::Evaluator)
+function setup!(o::SteppingOptimizer)
   # Do nothing, override if you need to setup prior to the optimization loop
 end
 
-function finalize(o::Optimizer, evaluator::Evaluator)
+function finalize!(o::SteppingOptimizer)
+  # Do nothing, override if you need to finalize something after the optimization loop
+end
+
+function setup!(o::AskTellOptimizer, evaluator::Evaluator)
+  # Do nothing, override if you need to setup prior to the optimization loop
+end
+
+function finalize!(o::AskTellOptimizer, evaluator::Evaluator)
   # Do nothing, override if you need to finalize something after the optimization loop
 end
 
@@ -115,6 +136,11 @@ function name(o::Optimizer)
   else
     return s
   end
+end
+
+# trace current optimization state,
+# Called by OptRunController trace_progress()
+function trace_state(io::IO, optimizer::Optimizer)
 end
 
 # Population
@@ -150,24 +176,30 @@ include("population.jl")
 # An archive collects information about the pareto optimal set or some
 # approximation of it. Different archival strategies can be implemented.
 
-# Different optimization algorithms
+# Different optimization algorithms/methods
 include("random_search.jl")
 include("differential_evolution.jl")
 include("adaptive_differential_evolution.jl")
 include("natural_evolution_strategies.jl")
+include("dx_nes.jl")
 include("resampling_memetic_search.jl")
 include("simultaneous_perturbation_stochastic_approximation.jl")
 include("generating_set_search.jl")
 include("direct_search_with_probabilistic_descent.jl")
-
-# End-user/interface functions
-include("bboptimize.jl")
 
 # Fitness
 # include("fitness/fitness_types.jl") FIXME merge it with fitness.jl
 include("fitness/pareto_dominance.jl")
 include("fitness/epsilon_pareto_dominance.jl")
 include("fitness/epsilon_box_dominance.jl")
+
+# End-user/top-level interface functions
+include("optimization_methods.jl")
+include("default_parameters.jl")
+include("optimization_result.jl")
+include("opt_controller.jl")
+include("bboptimize.jl")
+include("compare_optimizers.jl")
 
 # Problems for testing
 include(joinpath("problems", "single_objective.jl"))
